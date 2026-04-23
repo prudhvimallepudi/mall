@@ -877,7 +877,6 @@ async def ai_insights(request: Request, branch_id: Optional[str] = None,
 
         #msg = UserMessage(text=f"Data:\n{payload}\n\nReturn only JSON.")
         #raw = await chat.send_message(msg)
-        return {"message": "Feature coming soon"}
 
         import json as _json
         text = raw if isinstance(raw, str) else str(raw)
