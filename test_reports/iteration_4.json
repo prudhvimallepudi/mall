@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 4 – Integration Tab (file upload + AI parsing). Backend: 12/12 new iter4 tests pass (parse CSV/Excel/PDF, invalid-category 400, 5 MB 413, auth 401, import sales/expenses/inventory/attendance + case-insensitive employee match, history sorted + auth). Full regression 40/40. Frontend: Import tab renders as 7th tab in an 8-tab bar; hero, upload-cta, cat-sales/expenses/inventory/attendance cards, modal-cat-* picker, and 5 COMING SOON badges for Petpooja/Zomato/Swiggy/POSist/Restroworks all verified in mobile viewport.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter4_integrations.py",
+    "/app/backend/tests/test_iter3_employees_csv.py",
+    "/app/backend/tests/test_restaurant_api.py",
+    "/app/test_reports/pytest/iter4_results.xml"
+  ],
+  "action_items": [
+    "(Optional) integrations_parse stores parsed rows only in the response, never in DB. Re-visiting the upload in history cannot show previously parsed rows; if user cancels preview they must re-upload. Consider persisting `rows` on the upload doc (with 5 MB limit) or a short-lived cache.",
+    "(Optional) Heuristic PDF parser in _parse_pdf_bytes only handles CSV/TSV-looking lines; multi-column invoices rendered as aligned text won't be recognised. Consider adding pdfplumber table extraction or routing PDFs through GPT-4o vision for better results.",
+    "(Optional) Attendance import silently coerces unknown status strings to 'present' via status_map default; malformed files will look successful. Log or count such rows as failed instead of defaulting to present."
+  ],
+  "critical_code_review_comments": [
+    "server.py now 1475 lines — urgently needs splitting into routers/{auth,employees,expenses,inventory,dashboard,ai,imports,integrations}.py.",
+    "integrations_parse returns the full `rows` array in the JSON response and also keeps it in memory while the frontend sends it back on import — O(N) memory & duplicated bytes. For 5 MB files (~50k rows) this is acceptable but will not scale; consider persisting `rows` on the upload doc and referencing by upload_id during import.",
+    "_parse_image_bytes uses GPT-4o OCR but the endpoint does not validate that category matches the extracted data; an image marked 'attendance' could actually be a sales bill. No guardrail beyond AI mapping.",
+    "_coerce_number swallows all exceptions; a completely non-numeric 'total' silently becomes 0 which is then skipped as failed — fine, but no feedback to the user about which rows failed and why. Attach a per-row reason to the failed counter.",
+    "No pagination on /api/integrations/history — returns up to 50. OK today but should support limit/offset."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter4_integrations.py (new, 12 tests)"
+  ],
+  "success_rate": {"backend": "100% (40/40 across iter1-4)", "frontend": "100% (Import tab render, category modal, 8-tab nav all verified)"},
+  "seed_data_creation": "Each pytest run creates TEST_iter4_<uuid>@restaurant.com; UI run created iter4ui_<uuid>@restaurant.com. Seed yields 3 branches + 24 employees + 90d sales + 60d expenses.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Canonical pytest suites: test_restaurant_api.py (iter1-2), test_iter3_employees_csv.py (iter3), test_iter4_integrations.py (iter4). BASE_URL from EXPO_PUBLIC_BACKEND_URL. Integration endpoints: POST /api/integrations/parse, POST /api/integrations/import, GET /api/integrations/history. TARGET_SCHEMAS drive required_fields for each category. Dashboard revenue_30d rolls over a 30-day window from now(UTC) — integration tests must use today's date for imported rows to reflect in dashboard. Frontend file picker only fires OS dialog; skip automated file selection in Playwright — category modal visibility + testIDs is the UI contract for this feature.",
+  "rca_of_issue": "N/A — no functional bugs. Two initial test failures were due to using Jan-2025 dates in test rows (server time is Apr-2026) so imports fell outside dashboard's 30-day window and 365-day expense window; fixed by using TODAY in fixtures. All endpoints and UI flows now pass."
+}

@@ -1,0 +1,39 @@
+{
+  "summary": "Full backend + mobile UI regression for iteration 2 (Profile module + vibrant AI screen). 15/15 backend pytest cases pass. Full frontend flow (login -> dashboard -> all 6 tabs -> profile save -> dashboard refresh) works end-to-end. All new testIDs (avatars x12, profile inputs, save/logout, profile-button, insight badge) are present and functional.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "all",
+       "issues": [
+         "Expo version-mismatch warnings on startup: @react-native-async-storage/async-storage 3.0.2 (expected 2.2.0), expo-linear-gradient 55.0.13 (expected ~15.0.8), react-native-svg 15.15.4 (expected 15.12.1). No functional impact observed on web preview but should be aligned for native Expo Go.",
+         "React Native Web deprecation warnings in console: props.pointerEvents, TouchableMixin, transform-origin. Cosmetic — coming from 3rd-party libs."
+       ]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_restaurant_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: align expo-linear-gradient / async-storage / react-native-svg versions with Expo SDK expected versions to silence startup warnings and ensure native builds work."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 800+ lines — consider splitting auth / dashboard / inventory / expenses / ai into separate routers for maintainability.",
+    "PATCH /api/profile treats empty-string fields as valid updates (name.trim() can be empty -> filtered by `is not None` so empty string passes through). Not blocking, but consider rejecting blank strings for name/business_name/gst_number."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_restaurant_api.py (created new pytest suite, 15 tests)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% (all critical flows)"},
+  "seed_data_creation": "Each pytest run creates a fresh TEST_profile_<uuid>@restaurant.com user via /api/auth/demo-login, seeding 3 branches + 90 days of sales/menu/inventory/expenses. UI flow created ui_<uuid>@r.com user.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend test suite at /app/backend/tests/test_restaurant_api.py is the canonical regression. EXPO_PUBLIC_BACKEND_URL is read from env. Demo-login is the shortcut for auth — never need Google OAuth in tests. AI insights call Claude Sonnet 4.5 and can take 8-12s; test sets timeout=60s. Profile fields (avatar_id, business_name, gst_number, logo_url) are persisted on users collection and appear in /auth/me.",
+  "rca_of_issue": "N/A — no bugs. Two initial pytest failures on unauth tests were test-script artefacts (shared requests.Session retained session_token cookie from demo-login fixture); fixed by using a bare requests.get/patch (no session) for unauth assertions."
+}

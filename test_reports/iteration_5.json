@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 5 — Navigation redesign + global AI chat. Backend: 23/23 new iter5 tests pass (POST /api/ai/ask for all 5 contexts + unknown-context fallback + 401/422, GET /api/ai/suggestions for all 5 + unknown-context fallback + default, plus 8 regression checks on branches/dashboard/inventory/expenses/employees/menu/integrations/profile). Frontend: 6-tab bottom bar verified exactly [Dashboard, Inventory, Expenses, Staff, Menu, Profile] with NO AI/Import tabs; ai-fab visible top-right on all 6 tabs; modal shows AI ASSISTANT chip, contextual title, correct 'Context: <Tab>' pill per tab (Dashboard/Inventory/Expenses/Staff/Menu/Profile all confirmed); ai-input + ai-send produces real Claude answer; Quick Actions qa-csv/qa-excel/qa-pdf/qa-sync render; qa-csv navigates to /integrations and Upload History renders; all legacy testIDs (add-inventory-fab, add-expense-fab, add-employee-fab, attendance-toggle-*, profile-save-button) still present.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter5_ai_chat.py",
+    "/app/backend/tests/test_iter4_integrations.py",
+    "/app/backend/tests/test_iter3_employees_csv.py",
+    "/app/backend/tests/test_restaurant_api.py",
+    "/app/test_reports/pytest/iter5_results.xml"
+  ],
+  "action_items": [
+    "(Optional) AiFab treats 'profile' context by rewriting to 'dashboard' when calling /api/ai/ask and /api/ai/suggestions — backend does not accept 'profile' as a first-class context. If Profile tab should have its own contextual answers (e.g. business info / GST), add a 'profile' branch in backend CONTEXT_PROMPTS / _context_payload and update the suggestion list. Today the pill says 'Context: Profile' but the LLM is actually answering from dashboard data, which is slightly misleading.",
+    "(Optional) AiFab testIDs for suggestion cards are 'suggest-<first 10 chars>'. Could collide if two suggestions share the same first 10 chars. Consider using an index.",
+    "(Optional) app/(tabs)/dashboard.tsx + inventory.tsx + expenses.tsx + employees.tsx + menu.tsx + profile.tsx each call setKey(...) in useEffect. Consider moving this into a tiny useTabContext(key) hook to DRY up 6 near-identical effects."
+  ],
+  "critical_code_review_comments": [
+    "server.py is still ~1600 lines — splitting into routers (ai.py, auth.py, employees.py, expenses.py, inventory.py, dashboard.py, integrations.py) remains highly recommended.",
+    "/api/ai/suggestions is NOT auth-gated while /api/ai/ask is. The suggestion list is static so this is fine, but it would be more consistent to require auth like every other endpoint.",
+    "AiFab.tsx passes 'profile' → 'dashboard' in the frontend rather than server enforcing; better to send the raw context and let server fall back — already supported via CONTEXT_PROMPTS.get(ctx, 'dashboard').",
+    "AiFab's KeyboardAvoidingView has no enabled={Platform.OS==='ios'}; on Android the 'behavior' is undefined which is correct, but bottom-sheet height 85% may clip last suggestion on small devices (e.g. iPhone SE 667h). Consider flex with maxHeight."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter5_ai_chat.py (new, 23 tests)"
+  ],
+  "success_rate": {"backend": "100% (23/23 iter5 + previous 40/40 still green)", "frontend": "100% — all 12 requested UI checks verified"},
+  "seed_data_creation": "Pytest: TEST_iter5_<uuid>@restaurant.com per run. UI: iter5ui_test@restaurant.com (reused). Demo seed = 3 branches + 24 employees + 90d sales + 60d expenses + 30d attendance.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Canonical backend suites now: test_restaurant_api.py (iter1-2), test_iter3_employees_csv.py (iter3), test_iter4_integrations.py (iter4), test_iter5_ai_chat.py (iter5). Use EXPO_PUBLIC_BACKEND_URL env. AI endpoints: POST /api/ai/ask {context, question, branch_id?} requires Bearer, returns {answer, context}; GET /api/ai/suggestions?context=<x> is public, returns {suggestions:[3 strings]}. Valid contexts: dashboard|inventory|expenses|staff|menu; 'profile' and unknowns fall back to dashboard on the backend. Frontend AiFab.tsx lives in components/ (NOT in app/) and is mounted once in (tabs)/_layout.tsx outside of <Tabs>. Each tab screen calls setKey(...) in a useEffect — do NOT remove. Quick Actions on dashboard: qa-csv/qa-excel/qa-pdf route via router.push('/(tabs)/integrations'); qa-sync triggers local refetch only. Integrations route is still mounted but hidden via href:null in tabs layout.",
+  "rca_of_issue": "N/A — no functional regressions. First UI sweep falsely reported Inventory/Expenses pills missing because tab navigation used generic text-selector that matched non-tab-bar elements; fix was to use role='tab' selector. After the fix all 6 context pills render correctly and all legacy testIDs are intact."
+}

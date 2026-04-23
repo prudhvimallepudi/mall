@@ -1,0 +1,183 @@
+{
+  "theme": {
+    "mode": "dark",
+    "archetype": "Archetype 4 (Swiss & High-Contrast) adapted for Dark Mode Data Analytics",
+    "colors": {
+      "background": "#0A0A0A",
+      "surface": "#141414",
+      "surfaceHighlight": "#1F1F1F",
+      "border": "rgba(255, 255, 255, 0.08)",
+      "text": {
+        "primary": "#FFFFFF",
+        "secondary": "rgba(255, 255, 255, 0.65)",
+        "tertiary": "rgba(255, 255, 255, 0.4)",
+        "inverse": "#000000"
+      },
+      "brand": {
+        "primary": "#3B82F6",
+        "primaryMuted": "rgba(59, 130, 246, 0.15)"
+      },
+      "semantic": {
+        "success": "#10B981",
+        "successBg": "rgba(16, 185, 129, 0.15)",
+        "danger": "#EF4444",
+        "dangerBg": "rgba(239, 68, 68, 0.15)",
+        "warning": "#FACC15",
+        "warningBg": "rgba(250, 204, 21, 0.15)",
+        "ai": "#F59E0B",
+        "aiBg": "rgba(245, 158, 11, 0.15)"
+      }
+    },
+    "typography": {
+      "fontFamilies": {
+        "heading": "Outfit",
+        "body": "Manrope",
+        "mono": "JetBrains Mono"
+      },
+      "sizes": {
+        "h1": { "fontSize": 32, "lineHeight": 40, "letterSpacing": -1 },
+        "h2": { "fontSize": 24, "lineHeight": 32, "letterSpacing": -0.5 },
+        "h3": { "fontSize": 20, "lineHeight": 28, "letterSpacing": -0.5 },
+        "h4": { "fontSize": 16, "lineHeight": 24, "letterSpacing": 0 },
+        "body": { "fontSize": 14, "lineHeight": 20, "letterSpacing": 0 },
+        "small": { "fontSize": 12, "lineHeight": 16, "letterSpacing": 0 },
+        "micro": { "fontSize": 10, "lineHeight": 14, "letterSpacing": 0.5 }
+      }
+    },
+    "spacing": {
+      "xs": 4,
+      "sm": 8,
+      "md": 16,
+      "lg": 24,
+      "xl": 32,
+      "2xl": 48
+    },
+    "radii": {
+      "card": 8,
+      "button": 8,
+      "pill": 9999
+    }
+  },
+  "layout_patterns": {
+    "screen": {
+      "backgroundColor": "theme.colors.background",
+      "paddingHorizontal": 24,
+      "paddingTop": 32,
+      "paddingBottom": 48
+    },
+    "bento_grid": {
+      "flexDirection": "row",
+      "flexWrap": "wrap",
+      "justifyContent": "space-between",
+      "gap": 16
+    },
+    "bento_item_half": {
+      "width": "47.5%",
+      "marginBottom": 16
+    },
+    "bento_item_full": {
+      "width": "100%",
+      "marginBottom": 16
+    }
+  },
+  "component_guidelines": {
+    "kpi_card": {
+      "backgroundColor": "theme.colors.surface",
+      "borderRadius": 8,
+      "padding": 20,
+      "borderWidth": 1,
+      "borderColor": "theme.colors.border",
+      "alignItems": "flex-start",
+      "description": "Must use 'JetBrains Mono' for the main metric number to give a highly analytical, precise Power-BI feel. No shadows. Use optical alignment for internal elements."
+    },
+    "buttons": {
+      "primary": {
+        "backgroundColor": "theme.colors.brand.primary",
+        "paddingVertical": 14,
+        "paddingHorizontal": 24,
+        "borderRadius": 8,
+        "alignItems": "center"
+      },
+      "secondary": {
+        "backgroundColor": "transparent",
+        "borderWidth": 1,
+        "borderColor": "theme.colors.border",
+        "paddingVertical": 14,
+        "paddingHorizontal": 24,
+        "borderRadius": 8
+      }
+    },
+    "charts": {
+      "library": "victory-native or react-native-chart-kit",
+      "style": {
+        "backgroundColor": "transparent",
+        "description": "Lines must be crisp, no area gradients underneath (keep it strictly lines or solid bars) for a Swiss/Tech clean look. Remove chart axis lines; keep only data lines and subtle horizontal grid lines."
+      }
+    },
+    "list_item": {
+      "flexDirection": "row",
+      "justifyContent": "space-between",
+      "alignItems": "center",
+      "paddingVertical": 16,
+      "borderBottomWidth": 1,
+      "borderBottomColor": "theme.colors.border",
+      "description": "Used for Top Selling Items, Inventory, and Expenses. Stack primary text and secondary text on the left, put the metric/value on the far right."
+    }
+  },
+  "screens": {
+    "login": {
+      "layout": "Fullscreen ImageBackground with heavy dark gradient overlay.",
+      "visuals": "Use the dark pendant light image for the background.",
+      "components": "Google Sign-In button, sleek input fields with transparent backgrounds and solid bottom borders."
+    },
+    "dashboard_home": {
+      "layout": "Scrollable View. Header with Branch Selector. 2x2 Bento grid for KPIs (Today's Sales, Orders, Avg Ticket, Profit). Full width Sales line chart below. Payment mode donut chart half-width paired with Top Selling Items half-width list."
+    },
+    "reports": {
+      "layout": "Top Tab navigation (Daily/Monthly/Yearly). Full width stacked bar charts. Metric data tables."
+    },
+    "inventory": {
+      "layout": "Search bar sticky top. List of items. Use warning (Yellow) and danger (Red) left-borders on list items to indicate low stock."
+    },
+    "expenses": {
+      "layout": "Pie chart top half. Segmented control for category. Floating Action Button (FAB) for 'Add Expense' in primary brand color."
+    },
+    "ai_insights": {
+      "layout": "Full width cards. Background subtle tinted gold/amber (rgba(245, 158, 11, 0.05)). Sparkline charts inside cards to show prediction trends."
+    }
+  },
+  "accessibility_and_testing": {
+    "contrast": "Text over backgrounds must exceed 4.5:1. Primary white on #0A0A0A is 21:1. Muted text on #141414 must be at least rgba(255,255,255,0.65).",
+    "test_ids": "CRITICAL: All Touchables, Inputs, and interactive elements must have a `testID` attribute (React Native equivalent of data-testid). Example: `testID='login-submit-button'`, `testID='kpi-sales-card'`."
+  },
+  "media": {
+    "images": [
+      {
+        "category": "auth_background",
+        "url": "https://images.unsplash.com/photo-1759922221495-78755ac90d70?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwyfHxkYXJrJTIwbW9kZXJuJTIwcmVzdGF1cmFudCUyMGludGVyaW9yfGVufDB8fHx8MTc3NjkyMjQyMnww&ixlib=rb-4.1.0&q=85",
+        "description": "Three pendant lights hanging in darkness. Use with heavy dark gradient overlay (black/70 to black/90) to ensure text legibility.",
+        "usage": "Login Screen Background"
+      },
+      {
+        "category": "empty_state_banner",
+        "url": "https://images.unsplash.com/photo-1770816307454-892c27fc625e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwxfHxkYXJrJTIwbW9kZXJuJTIwcmVzdGF1cmFudCUyMGludGVyaW9yfGVufDB8fHx8MTc3NjkyMjQyMnww&ixlib=rb-4.1.0&q=85",
+        "description": "Modern dining area with hanging pendant lights.",
+        "usage": "Fallback image for empty states or generic placeholders."
+      }
+    ],
+    "icons": {
+      "library": "lucide-react-native",
+      "instruction": "Use Lucide React Native for all iconography. Stroke width 1.5 for a clean, premium tech look. Avoid filled icons."
+    }
+  },
+  "instructions_to_main_agent": [
+    "This is a React Native Expo application. DO NOT use HTML/DOM elements (div, span) or web libraries like Shadcn/UI.",
+    "Use StyleSheet or NativeWind (if Tailwind is configured) for styling.",
+    "Implement the 'Bento Grid' layout using Flexbox (flexWrap: 'wrap', justifyContent: 'space-between') with percentages for width.",
+    "Charts must be implemented using react-native-chart-kit or victory-native.",
+    "For the login screen, use an ImageBackground with the provided `auth_background` URL and apply a dark overlay (e.g. LinearGradient from rgba(10,10,10,0.7) to rgba(10,10,10,0.95)) so the login form is readable.",
+    "All text must use the specified colors. No pure #FFFFFF on pure #000000; use the custom #0A0A0A background and #FFFFFF text.",
+    "Ensure all buttons, list items, and form inputs have a `testID` attribute (e.g., `testID='add-expense-button'`) for testing purposes.",
+    "Adhere to the 8px border-radius rule for all cards and buttons. DO NOT use heavy drop shadows in dark mode; rely on the 1px subtle border (`rgba(255,255,255,0.08)`) to define edges."
+  ]
+}
