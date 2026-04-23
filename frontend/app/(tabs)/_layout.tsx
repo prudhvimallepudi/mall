@@ -5,7 +5,7 @@ import { theme } from "../../constants/theme";
 import { useAuth } from "../../lib/auth";
 import { View, ActivityIndicator } from "react-native";
 import { AiContextProvider } from "../../lib/aiContext";
-import { AiFab } from "../../components/AiFab";
+import { FloatingActions } from "../../components/FloatingActions";
 
 export default function TabsLayout() {
   const { user, loading } = useAuth();
@@ -86,7 +86,7 @@ export default function TabsLayout() {
           <Tabs.Screen name="notifications" options={{ href: null }} />
           <Tabs.Screen name="settings" options={{ href: null }} />
         </Tabs>
-        <AiFab />
+        <FloatingActions />
       </View>
     </AiContextProvider>
   );

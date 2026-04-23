@@ -9,6 +9,7 @@ import api from "../../lib/api";
 import { theme } from "../../constants/theme";
 import { BranchPicker, inr } from "../../components/BranchPicker";
 import { useAiContext } from "../../lib/aiContext";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   present: { label: "Present", color: theme.colors.semantic.success, bg: theme.colors.semantic.successBg },
@@ -29,6 +30,14 @@ export default function Employees() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ name: "", role: "", monthly_salary: "", phone: "", shift: "Morning" });
+  const params = useLocalSearchParams<{ add?: string }>();
+  const router = useRouter();
+  useEffect(() => {
+    if (params.add === "1") {
+      setModal(true);
+      router.setParams({ add: undefined } as any);
+    }
+  }, [params.add, router]);
 
   const load = useCallback(async (bid = branchId) => {
     try {
@@ -198,7 +207,7 @@ export default function Employees() {
         <Text style={styles.hint}>Tap the status chip to cycle: Unmarked → Present → Half → Leave → Absent</Text>
       </ScrollView>
 
-      <TouchableOpacity testID="add-employee-fab" style={styles.fab} onPress={() => setModal(true)}>
+      <TouchableOpacity testID="add-employee-fab" style={[styles.fab, { display: "none" }]} onPress={() => setModal(true)}>
         <Ionicons name="person-add" size={22} color="#fff" />
       </TouchableOpacity>
 

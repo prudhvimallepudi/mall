@@ -9,6 +9,7 @@ import api from "../../lib/api";
 import { theme } from "../../constants/theme";
 import { BranchPicker, inr } from "../../components/BranchPicker";
 import { useAiContext } from "../../lib/aiContext";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 const CATEGORY_COLORS: Record<string, string> = {
   Rent: "#3B82F6",
@@ -32,6 +33,14 @@ export default function Expenses() {
   const [csvModal, setCsvModal] = useState(false);
   const [csvText, setCsvText] = useState("");
   const [importing, setImporting] = useState(false);
+  const params = useLocalSearchParams<{ add?: string }>();
+  const router = useRouter();
+  useEffect(() => {
+    if (params.add === "1") {
+      setModal(true);
+      router.setParams({ add: undefined } as any);
+    }
+  }, [params.add, router]);
 
   const load = useCallback(async (bid = branchId) => {
     const [b, r] = await Promise.all([
@@ -158,7 +167,7 @@ export default function Expenses() {
         </View>
       </ScrollView>
 
-      <TouchableOpacity testID="add-expense-fab" style={styles.fab} onPress={() => setModal(true)}>
+      <TouchableOpacity testID="add-expense-fab" style={[styles.fab, { display: "none" }]} onPress={() => setModal(true)}>
         <Ionicons name="add" size={24} color="#fff" />
       </TouchableOpacity>
 

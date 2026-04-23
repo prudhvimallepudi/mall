@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import api from "../../lib/api";
 import { theme } from "../../constants/theme";
 import { BranchPicker, inr } from "../../components/BranchPicker";
@@ -13,6 +14,8 @@ import { useAiContext } from "../../lib/aiContext";
 export default function Inventory() {
   const { setKey } = useAiContext();
   useEffect(() => { setKey("inventory"); }, [setKey]);
+  const params = useLocalSearchParams<{ add?: string }>();
+  const router = useRouter();
   const [branches, setBranches] = useState<any[]>([]);
   const [branchId, setBranchId] = useState("all");
   const [items, setItems] = useState<any[]>([]);
@@ -20,6 +23,14 @@ export default function Inventory() {
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ name: "", unit: "kg", stock: "", min_stock: "", cost_per_unit: "" });
+
+  // Open add modal when triggered via URL params from the Quick Action FAB
+  useEffect(() => {
+    if (params.add === "1") {
+      setModal(true);
+      router.setParams({ add: undefined } as any);
+    }
+  }, [params.add, router]);
 
   const load = useCallback(async (bid = branchId) => {
     try {
@@ -120,10 +131,6 @@ export default function Inventory() {
         })}
         {filtered.length === 0 && <Text style={styles.empty}>No items found.</Text>}
       </ScrollView>
-
-      <TouchableOpacity testID="add-inventory-fab" onPress={() => setModal(true)} style={styles.fab}>
-        <Ionicons name="add" size={24} color="#fff" />
-      </TouchableOpacity>
 
       <Modal visible={modal} animationType="slide" transparent onRequestClose={() => setModal(false)}>
         <View style={styles.modalBg}>
