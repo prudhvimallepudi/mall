@@ -83,6 +83,8 @@ export default function TabsLayout() {
           {/* Hidden routes — still reachable programmatically but not in tab bar */}
           <Tabs.Screen name="insights" options={{ href: null }} />
           <Tabs.Screen name="integrations" options={{ href: null }} />
+          <Tabs.Screen name="notifications" options={{ href: null }} />
+          <Tabs.Screen name="settings" options={{ href: null }} />
         </Tabs>
         <AiFab />
       </View>

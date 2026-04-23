@@ -1587,7 +1587,610 @@ async def integrations_history(request: Request,
     return {"items": items}
 
 
-app.include_router(api_router)
+
+# =================== NOTIFICATION SETTINGS ===================
+DEFAULT_NOTIF_SETTINGS = {
+    "low_stock_enabled": True,
+    "out_of_stock_enabled": True,
+    "staff_absent_enabled": True,
+    "high_sales_milestone_enabled": True,
+    "low_sales_warning_enabled": True,
+    "expense_limit_enabled": True,
+    "expense_limit_monthly": 500000.0,  # ₹5L default cap
+    "sound_enabled": True,
+    "eod_time": "23:30",
+    "eod_timezone": "Asia/Kolkata",
+    "eod_recipient_emails": [],
+    "eod_daily_enabled": True,
+    "eod_weekly_enabled": False,
+    "eod_monthly_enabled": False,
+    "branch_rules": {},  # {branch_id: true/false}
+}
+
+
+class NotifSettingsUpdate(BaseModel):
+    low_stock_enabled: Optional[bool] = None
+    out_of_stock_enabled: Optional[bool] = None
+    staff_absent_enabled: Optional[bool] = None
+    high_sales_milestone_enabled: Optional[bool] = None
+    low_sales_warning_enabled: Optional[bool] = None
+    expense_limit_enabled: Optional[bool] = None
+    expense_limit_monthly: Optional[float] = None
+    sound_enabled: Optional[bool] = None
+    eod_time: Optional[str] = None  # "HH:MM"
+    eod_timezone: Optional[str] = None
+    eod_recipient_emails: Optional[List[str]] = None
+    eod_daily_enabled: Optional[bool] = None
+    eod_weekly_enabled: Optional[bool] = None
+    eod_monthly_enabled: Optional[bool] = None
+    branch_rules: Optional[Dict[str, bool]] = None
+
+
+async def _get_settings(user_id: str) -> Dict[str, Any]:
+    doc = await db.notif_settings.find_one({"user_id": user_id}, {"_id": 0})
+    if not doc:
+        doc = {"user_id": user_id, **DEFAULT_NOTIF_SETTINGS}
+        await db.notif_settings.insert_one(dict(doc))
+        doc.pop("_id", None)
+    # Backfill any new defaults
+    for k, v in DEFAULT_NOTIF_SETTINGS.items():
+        doc.setdefault(k, v)
+    return doc
+
+
+@api_router.get("/settings/notifications")
+async def get_notif_settings(request: Request,
+                             session_token: Optional[str] = Cookie(default=None),
+                             authorization: Optional[str] = Header(default=None)):
+    user = await get_current_user(request, session_token, authorization)
+    settings = await _get_settings(user.user_id)
+    settings.pop("user_id", None)
+    return settings
+
+
+@api_router.patch("/settings/notifications")
+async def patch_notif_settings(req: NotifSettingsUpdate, request: Request,
+                               session_token: Optional[str] = Cookie(default=None),
+                               authorization: Optional[str] = Header(default=None)):
+    user = await get_current_user(request, session_token, authorization)
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    # Validate eod_time
+    if "eod_time" in updates:
+        try:
+            hh, mm = updates["eod_time"].split(":")
+            if not (0 <= int(hh) < 24 and 0 <= int(mm) < 60):
+                raise ValueError()
+        except Exception:
+            raise HTTPException(status_code=400, detail="eod_time must be HH:MM (24-hour)")
+    await _get_settings(user.user_id)  # ensure row exists
+    await db.notif_settings.update_one({"user_id": user.user_id}, {"$set": updates})
+    settings = await _get_settings(user.user_id)
+    settings.pop("user_id", None)
+    return settings
+
+
+# =================== NOTIFICATIONS ENGINE ===================
+async def _compute_notifications(user_id: str) -> List[Dict[str, Any]]:
+    """Compute current actionable notifications from live DB state."""
+    settings = await _get_settings(user_id)
+    branch_rules = settings.get("branch_rules") or {}
+    allowed_branch = lambda bid: branch_rules.get(bid, True)  # default on
+
+    today = datetime.now(timezone.utc).date().isoformat()
+    notifs: List[Dict[str, Any]] = []
+
+    # Branch lookup
+    branches = await db.branches.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    branch_name = {b["branch_id"]: b["name"] for b in branches}
+
+    # --- Inventory low / out of stock ---
+    if settings.get("low_stock_enabled") or settings.get("out_of_stock_enabled"):
+        inv = await db.inventory.find({"user_id": user_id}, {"_id": 0}).to_list(2000)
+        for i in inv:
+            if not allowed_branch(i["branch_id"]):
+                continue
+            stock = float(i.get("stock") or 0)
+            min_stock = float(i.get("min_stock") or 0)
+            bn = branch_name.get(i["branch_id"], "Branch")
+            if stock <= 0 and settings.get("out_of_stock_enabled"):
+                notifs.append({
+                    "id": f"out:{i['item_id']}:{today}",
+                    "type": "out_of_stock",
+                    "severity": "critical",
+                    "icon": "close-circle",
+                    "title": f"{i['name']} stock out of stock",
+                    "message": f"0 {i['unit']} left at {bn}. Reorder immediately.",
+                    "branch_id": i["branch_id"],
+                    "branch_name": bn,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "link": "inventory",
+                })
+            elif stock < min_stock and settings.get("low_stock_enabled"):
+                notifs.append({
+                    "id": f"low:{i['item_id']}:{today}",
+                    "type": "low_stock",
+                    "severity": "warning",
+                    "icon": "alert-circle",
+                    "title": f"{i['name']} stock is low",
+                    "message": f"{stock:g} {i['unit']} remaining at {bn} (min {min_stock:g}).",
+                    "branch_id": i["branch_id"],
+                    "branch_name": bn,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "link": "inventory",
+                })
+
+    # --- Staff absent today ---
+    if settings.get("staff_absent_enabled"):
+        absents = await db.attendance.find(
+            {"user_id": user_id, "date": today, "status": "absent"}, {"_id": 0}
+        ).to_list(500)
+        if absents:
+            emp_ids = [a["employee_id"] for a in absents]
+            emps = await db.employees.find({"user_id": user_id, "employee_id": {"$in": emp_ids}}, {"_id": 0}).to_list(500)
+            emp_map = {e["employee_id"]: e for e in emps}
+            for a in absents:
+                e = emp_map.get(a["employee_id"])
+                if not e or not allowed_branch(e["branch_id"]):
+                    continue
+                bn = branch_name.get(e["branch_id"], "Branch")
+                notifs.append({
+                    "id": f"absent:{e['employee_id']}:{today}",
+                    "type": "staff_absent",
+                    "severity": "warning",
+                    "icon": "person-remove",
+                    "title": f"{e['name']} is absent today",
+                    "message": f"{e['role']} · {e['shift']} shift · {bn}. Tap to call or reassign.",
+                    "branch_id": e["branch_id"],
+                    "branch_name": bn,
+                    "employee_id": e["employee_id"],
+                    "phone": e.get("phone"),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "link": "employees",
+                })
+
+    # --- Sales milestones ---
+    if settings.get("high_sales_milestone_enabled") or settings.get("low_sales_warning_enabled"):
+        today_sales_docs = await db.sales.find({"user_id": user_id, "date": today}, {"_id": 0}).to_list(500)
+        today_total = sum(s["total"] for s in today_sales_docs)
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).date().isoformat()
+        recent = await db.sales.find({"user_id": user_id, "date": {"$gte": cutoff}}, {"_id": 0}).to_list(2000)
+        # 7-day average per-day (excluding today)
+        days = {}
+        for s in recent:
+            if s["date"] == today:
+                continue
+            days[s["date"]] = days.get(s["date"], 0) + s["total"]
+        avg_7d = (sum(days.values()) / max(len(days), 1)) if days else 0
+
+        if avg_7d > 0:
+            if today_total >= avg_7d * 1.5 and settings.get("high_sales_milestone_enabled"):
+                notifs.append({
+                    "id": f"highsales:{today}",
+                    "type": "high_sales",
+                    "severity": "success",
+                    "icon": "trending-up",
+                    "title": "🎉 High sales milestone",
+                    "message": f"Today ₹{int(today_total):,} is {int((today_total / avg_7d - 1) * 100)}% above your 7-day average.",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "link": "dashboard",
+                })
+            elif today_total > 0 and today_total <= avg_7d * 0.5 and settings.get("low_sales_warning_enabled"):
+                notifs.append({
+                    "id": f"lowsales:{today}",
+                    "type": "low_sales",
+                    "severity": "warning",
+                    "icon": "trending-down",
+                    "title": "Low sales warning",
+                    "message": f"Today ₹{int(today_total):,} is {int((1 - today_total / avg_7d) * 100)}% below your 7-day average.",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "link": "dashboard",
+                })
+
+    # --- Monthly expense limit ---
+    if settings.get("expense_limit_enabled"):
+        limit = float(settings.get("expense_limit_monthly") or 0)
+        if limit > 0:
+            month_cutoff = datetime.now(timezone.utc).replace(day=1).date().isoformat()
+            exps = await db.expenses.find(
+                {"user_id": user_id, "date": {"$gte": month_cutoff}}, {"_id": 0}
+            ).to_list(5000)
+            total = sum(e["amount"] for e in exps)
+            if total >= limit:
+                notifs.append({
+                    "id": f"explimit:{datetime.now(timezone.utc).strftime('%Y-%m')}",
+                    "type": "expense_limit",
+                    "severity": "critical",
+                    "icon": "cash-outline",
+                    "title": "Monthly expense limit crossed",
+                    "message": f"₹{int(total):,} spent vs ₹{int(limit):,} limit ({int(total / limit * 100)}%).",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "link": "expenses",
+                })
+            elif total >= limit * 0.85:
+                notifs.append({
+                    "id": f"expwarn:{datetime.now(timezone.utc).strftime('%Y-%m')}",
+                    "type": "expense_warning",
+                    "severity": "warning",
+                    "icon": "warning-outline",
+                    "title": "Approaching expense limit",
+                    "message": f"₹{int(total):,} of ₹{int(limit):,} monthly budget used ({int(total / limit * 100)}%).",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "link": "expenses",
+                })
+
+    # --- Recent imports ---
+    recent_imports = await db.uploads.find(
+        {"user_id": user_id, "status": "imported"}, {"_id": 0}
+    ).sort("imported_at", -1).to_list(3)
+    for up in recent_imports:
+        ts = up.get("imported_at")
+        if isinstance(ts, datetime):
+            age = (datetime.now(timezone.utc) - ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else datetime.now(timezone.utc) - ts).total_seconds()
+        else:
+            age = 999999
+        if age < 24 * 3600:  # 1 day
+            notifs.append({
+                "id": f"import:{up['upload_id']}",
+                "type": "import_complete",
+                "severity": "info",
+                "icon": "checkmark-done-circle",
+                "title": f"Import complete: {up.get('filename', 'file')}",
+                "message": f"{up.get('imported_count', 0)} {up.get('category', 'rows')} imported.",
+                "created_at": (ts.isoformat() if isinstance(ts, datetime) else datetime.now(timezone.utc).isoformat()),
+                "link": "integrations",
+            })
+
+    # Sort: critical first, then warning, then info/success. Most recent first within same severity.
+    sev_order = {"critical": 0, "warning": 1, "info": 2, "success": 3}
+    notifs.sort(key=lambda n: (sev_order.get(n["severity"], 9), n.get("created_at", "")))
+    return notifs
+
+
+@api_router.get("/notifications")
+async def list_notifications(request: Request,
+                             session_token: Optional[str] = Cookie(default=None),
+                             authorization: Optional[str] = Header(default=None)):
+    user = await get_current_user(request, session_token, authorization)
+    notifs = await _compute_notifications(user.user_id)
+    read_ids = set(
+        r["notification_id"] for r in await db.notification_reads.find(
+            {"user_id": user.user_id}, {"_id": 0, "notification_id": 1}
+        ).to_list(5000)
+    )
+    for n in notifs:
+        n["read"] = n["id"] in read_ids
+    unread_count = sum(1 for n in notifs if not n["read"])
+    return {"notifications": notifs, "unread_count": unread_count}
+
+
+@api_router.get("/notifications/unread-count")
+async def notifications_unread_count(request: Request,
+                                     session_token: Optional[str] = Cookie(default=None),
+                                     authorization: Optional[str] = Header(default=None)):
+    user = await get_current_user(request, session_token, authorization)
+    notifs = await _compute_notifications(user.user_id)
+    read_ids = set(
+        r["notification_id"] for r in await db.notification_reads.find(
+            {"user_id": user.user_id}, {"_id": 0, "notification_id": 1}
+        ).to_list(5000)
+    )
+    return {"unread_count": sum(1 for n in notifs if n["id"] not in read_ids)}
+
+
+class MarkReadRequest(BaseModel):
+    notification_id: str
+
+
+@api_router.post("/notifications/read")
+async def mark_read(req: MarkReadRequest, request: Request,
+                    session_token: Optional[str] = Cookie(default=None),
+                    authorization: Optional[str] = Header(default=None)):
+    user = await get_current_user(request, session_token, authorization)
+    await db.notification_reads.update_one(
+        {"user_id": user.user_id, "notification_id": req.notification_id},
+        {"$set": {
+            "user_id": user.user_id,
+            "notification_id": req.notification_id,
+            "read_at": datetime.now(timezone.utc),
+        }},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api_router.post("/notifications/read-all")
+async def mark_all_read(request: Request,
+                       session_token: Optional[str] = Cookie(default=None),
+                       authorization: Optional[str] = Header(default=None)):
+    user = await get_current_user(request, session_token, authorization)
+    notifs = await _compute_notifications(user.user_id)
+    now = datetime.now(timezone.utc)
+    for n in notifs:
+        await db.notification_reads.update_one(
+            {"user_id": user.user_id, "notification_id": n["id"]},
+            {"$set": {"user_id": user.user_id, "notification_id": n["id"], "read_at": now}},
+            upsert=True,
+        )
+    return {"ok": True, "count": len(notifs)}
+
+
+# =================== END-OF-DAY REPORT ===================
+async def _build_eod_report(user_id: str, date_str: Optional[str] = None,
+                             branch_id: Optional[str] = None) -> Dict[str, Any]:
+    date_str = date_str or datetime.now(timezone.utc).date().isoformat()
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    q = {"user_id": user_id}
+    if branch_id and branch_id != "all":
+        q["branch_id"] = branch_id
+
+    branches = await db.branches.find({"user_id": user_id}, {"_id": 0}).to_list(50)
+    branch_name = {b["branch_id"]: b["name"] for b in branches}
+
+    # Today sales
+    sales = await db.sales.find({**q, "date": date_str}, {"_id": 0}).to_list(500)
+    total_sales = sum(s["total"] for s in sales)
+    total_orders = sum(s["orders"] for s in sales)
+    avg_ticket = (total_sales / total_orders) if total_orders else 0
+    cash = sum(s["cash"] for s in sales)
+    upi = sum(s["upi"] for s in sales)
+    card = sum(s["card"] for s in sales)
+    tax = sum(s.get("tax", 0) for s in sales)
+
+    # Expenses today
+    exps_today = await db.expenses.find({**q, "date": date_str}, {"_id": 0}).to_list(500)
+    total_exp_today = sum(e["amount"] for e in exps_today)
+
+    profit_est = total_sales - total_exp_today
+
+    # Branch-wise
+    per_branch: Dict[str, Dict[str, Any]] = {}
+    for s in sales:
+        b = per_branch.setdefault(s["branch_id"], {
+            "branch_id": s["branch_id"],
+            "branch_name": branch_name.get(s["branch_id"], "Branch"),
+            "total": 0, "orders": 0,
+        })
+        b["total"] += s["total"]
+        b["orders"] += s["orders"]
+    branches_perf = sorted(per_branch.values(), key=lambda x: -x["total"])
+
+    # Top / Low selling items (lifetime aggregate)
+    menu = await db.menu_items.find(q, {"_id": 0}).to_list(1000)
+    agg: Dict[str, Dict[str, Any]] = {}
+    for m in menu:
+        a = agg.setdefault(m["name"], {"name": m["name"], "units_sold": 0, "revenue": 0})
+        a["units_sold"] += m["units_sold"]
+        a["revenue"] += m["units_sold"] * m["price"]
+    items_sorted = sorted(agg.values(), key=lambda x: -x["units_sold"])
+    top_items = items_sorted[:5]
+    low_items = [x for x in items_sorted if x["units_sold"] > 0][-5:]
+
+    # Staff attendance summary for today
+    att = await db.attendance.find({"user_id": user_id, "date": date_str}, {"_id": 0}).to_list(1000)
+    att_counts = {"present": 0, "absent": 0, "leave": 0, "half": 0}
+    for a in att:
+        att_counts[a["status"]] = att_counts.get(a["status"], 0) + 1
+    total_emp = await db.employees.count_documents({"user_id": user_id})
+
+    # Low stock items count
+    inv = await db.inventory.find({"user_id": user_id}, {"_id": 0}).to_list(2000)
+    low_stock = [i for i in inv if i["stock"] < i["min_stock"]]
+
+    return {
+        "report_for": date_str,
+        "business_name": (user or {}).get("business_name") or (user or {}).get("name") or "Your Business",
+        "owner_email": (user or {}).get("email", ""),
+        "totals": {
+            "total_sales": round(total_sales, 2),
+            "total_orders": total_orders,
+            "avg_ticket": round(avg_ticket, 2),
+            "cash": round(cash, 2),
+            "upi": round(upi, 2),
+            "card": round(card, 2),
+            "tax": round(tax, 2),
+            "expenses_today": round(total_exp_today, 2),
+            "profit_estimate": round(profit_est, 2),
+        },
+        "branches": branches_perf,
+        "top_items": top_items,
+        "low_items": low_items,
+        "staff_attendance": {**att_counts, "total_employees": total_emp},
+        "low_stock_count": len(low_stock),
+        "low_stock_preview": [
+            {"name": i["name"], "stock": i["stock"], "min_stock": i["min_stock"], "unit": i["unit"]}
+            for i in low_stock[:10]
+        ],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@api_router.get("/reports/eod")
+async def eod_report(request: Request, date: Optional[str] = None, branch_id: Optional[str] = None,
+                     session_token: Optional[str] = Cookie(default=None),
+                     authorization: Optional[str] = Header(default=None)):
+    user = await get_current_user(request, session_token, authorization)
+    return await _build_eod_report(user.user_id, date, branch_id)
+
+
+@api_router.get("/reports/eod/pdf")
+async def eod_report_pdf(request: Request, date: Optional[str] = None, branch_id: Optional[str] = None,
+                         session_token: Optional[str] = Cookie(default=None),
+                         authorization: Optional[str] = Header(default=None)):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from fastapi.responses import StreamingResponse
+    import io as _io_pdf
+
+    user = await get_current_user(request, session_token, authorization)
+    report = await _build_eod_report(user.user_id, date, branch_id)
+
+    buf = _io_pdf.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm,
+                            leftMargin=1.5 * cm, rightMargin=1.5 * cm, title="EOD Report")
+
+    styles = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1", parent=styles["Heading1"], textColor=colors.HexColor("#F97316"), fontSize=22, spaceAfter=6)
+    h2 = ParagraphStyle("h2", parent=styles["Heading2"], textColor=colors.HexColor("#111827"), fontSize=13, spaceBefore=14, spaceAfter=6)
+    normal = ParagraphStyle("n", parent=styles["Normal"], fontSize=10, textColor=colors.HexColor("#374151"))
+    small = ParagraphStyle("s", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#6B7280"))
+
+    def inr_fmt(n):
+        return f"₹ {float(n or 0):,.2f}"
+
+    story = []
+    story.append(Paragraph("RestroHub — End of Day Report", h1))
+    story.append(Paragraph(f"{report['business_name']} · {report['report_for']}", small))
+    story.append(Spacer(1, 6))
+
+    # Totals table
+    t = report["totals"]
+    totals_data = [
+        ["Total Sales", inr_fmt(t["total_sales"]), "Orders", str(t["total_orders"])],
+        ["Avg Ticket", inr_fmt(t["avg_ticket"]), "Tax Collected", inr_fmt(t["tax"])],
+        ["Cash", inr_fmt(t["cash"]), "UPI", inr_fmt(t["upi"])],
+        ["Card", inr_fmt(t["card"]), "Expenses Today", inr_fmt(t["expenses_today"])],
+        ["Profit Estimate", inr_fmt(t["profit_estimate"]), "Low Stock Items", str(report["low_stock_count"])],
+    ]
+    tbl = Table(totals_data, colWidths=[4 * cm, 4.5 * cm, 4 * cm, 4.5 * cm])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FFF7ED")),
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#F97316")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#FDBA74")),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#111827")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
+    ]))
+    story.append(Paragraph("Today at a Glance", h2))
+    story.append(tbl)
+
+    # Branches
+    if report["branches"]:
+        story.append(Paragraph("Branch-wise Performance", h2))
+        rows = [["Branch", "Sales", "Orders"]]
+        for b in report["branches"]:
+            rows.append([b["branch_name"], inr_fmt(b["total"]), str(b["orders"])])
+        bt = Table(rows, colWidths=[8 * cm, 5 * cm, 4 * cm])
+        bt.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D1D5DB")),
+            ("FONTSIZE", (0, 0), (-1, -1), 10),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(bt)
+
+    # Top items
+    if report["top_items"]:
+        story.append(Paragraph("Top Selling Items", h2))
+        rows = [["#", "Item", "Units", "Revenue"]]
+        for i, it in enumerate(report["top_items"], 1):
+            rows.append([str(i), it["name"], str(it["units_sold"]), inr_fmt(it["revenue"])])
+        tt = Table(rows, colWidths=[1 * cm, 9 * cm, 3 * cm, 4 * cm])
+        tt.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F97316")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D1D5DB")),
+            ("FONTSIZE", (0, 0), (-1, -1), 10),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(tt)
+
+    # Staff attendance
+    sa = report["staff_attendance"]
+    story.append(Paragraph("Staff Attendance Today", h2))
+    sa_rows = [
+        ["Total Employees", str(sa["total_employees"])],
+        ["Present", str(sa["present"])],
+        ["Half-day", str(sa["half"])],
+        ["Leave", str(sa["leave"])],
+        ["Absent", str(sa["absent"])],
+    ]
+    sat = Table(sa_rows, colWidths=[8 * cm, 4 * cm])
+    sat.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D1D5DB")),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+    ]))
+    story.append(sat)
+
+    # Low stock preview
+    if report["low_stock_preview"]:
+        story.append(Paragraph("Low Stock Items (Reorder Needed)", h2))
+        rows = [["Item", "Current", "Minimum"]]
+        for i in report["low_stock_preview"]:
+            rows.append([i["name"], f"{i['stock']:g} {i['unit']}", f"{i['min_stock']:g} {i['unit']}"])
+        lst = Table(rows, colWidths=[8 * cm, 4 * cm, 4 * cm])
+        lst.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EF4444")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#FCA5A5")),
+            ("FONTSIZE", (0, 0), (-1, -1), 10),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(lst)
+
+    story.append(Spacer(1, 18))
+    story.append(Paragraph(f"Generated by RestroHub · {report['generated_at'][:19]} UTC", small))
+    doc.build(story)
+    buf.seek(0)
+
+    filename = f"RestroHub-EOD-{report['report_for']}.pdf"
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+class EodSendRequest(BaseModel):
+    date: Optional[str] = None
+    branch_id: Optional[str] = None
+
+
+@api_router.post("/reports/eod/send")
+async def eod_report_send(req: EodSendRequest, request: Request,
+                          session_token: Optional[str] = Cookie(default=None),
+                          authorization: Optional[str] = Header(default=None)):
+    """Stub for email delivery. Currently marks a queued job when SendGrid isn't configured."""
+    user = await get_current_user(request, session_token, authorization)
+    settings = await _get_settings(user.user_id)
+    recipients = settings.get("eod_recipient_emails") or []
+    has_email_creds = bool(os.environ.get("SENDGRID_API_KEY")) and bool(os.environ.get("SENDER_EMAIL"))
+    if not has_email_creds:
+        return {
+            "ok": False,
+            "queued": False,
+            "reason": "email_not_configured",
+            "message": "SendGrid is not configured yet. Add SENDGRID_API_KEY and SENDER_EMAIL in backend/.env to enable sending.",
+            "recipients": recipients,
+        }
+    if not recipients:
+        raise HTTPException(status_code=400, detail="Add at least one recipient email in Settings first.")
+    # Email delivery path is disabled until the user provides SendGrid credentials.
+    return {
+        "ok": False,
+        "queued": False,
+        "reason": "email_delivery_disabled",
+        "message": "Email delivery is disabled in this build. PDF is available via /api/reports/eod/pdf.",
+        "recipients": recipients,
+    }
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -1601,3 +2204,6 @@ app.add_middleware(
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+
+app.include_router(api_router)

@@ -13,6 +13,7 @@ import { useAuth } from "../../lib/auth";
 import { BranchPicker, inr } from "../../components/BranchPicker";
 import { Avatar } from "../../components/Avatar";
 import { RHLogo } from "../../components/RHLogo";
+import { NotificationBell } from "../../components/NotificationBell";
 import { useAiContext } from "../../lib/aiContext";
 
 const W = Dimensions.get("window").width;
@@ -70,6 +71,16 @@ export default function Dashboard() {
       >
         <View style={styles.brandBar}>
           <RHLogo size={32} showWordmark wordmarkColor={theme.colors.text.primary} testID="dashboard-rh-logo" />
+          <View style={{ flex: 1 }} />
+          <NotificationBell />
+          <TouchableOpacity
+            testID="dashboard-settings-btn"
+            onPress={() => router.push("/(tabs)/settings")}
+            style={styles.brandIconBtn}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="settings-outline" size={20} color={theme.colors.text.primary} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.header}>
@@ -223,7 +234,12 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.colors.background },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   scroll: { padding: 24, paddingBottom: 40 },
-  brandBar: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
+  brandBar: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
+  brandIconBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface,
+    alignItems: "center", justifyContent: "center",
+  },
   header: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
   greeting: { color: theme.colors.text.tertiary, fontSize: 12, letterSpacing: 1 },
   name: { color: theme.colors.text.primary, fontSize: 24, fontWeight: "800", marginTop: 2 },

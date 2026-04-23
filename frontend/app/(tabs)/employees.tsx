@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity,
-  TextInput, Modal, Alert, RefreshControl,
+  TextInput, Modal, Alert, RefreshControl, Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -52,6 +52,39 @@ export default function Employees() {
       load();
     } catch (e: any) {
       Alert.alert("Error", e?.response?.data?.detail || "Unable to update");
+    }
+  };
+
+  const openUrl = async (url: string, fallback: string) => {
+    try {
+      const can = await Linking.canOpenURL(url);
+      if (can) { Linking.openURL(url); return; }
+    } catch {}
+    Alert.alert("Unavailable", fallback);
+  };
+
+  const contactAction = (emp: any, kind: "call" | "whatsapp" | "sms" | "mail") => {
+    const phone = (emp.phone || "").replace(/[^0-9+]/g, "");
+    if ((kind === "call" || kind === "whatsapp" || kind === "sms") && !phone) {
+      Alert.alert("No phone", `${emp.name} has no phone number on file.`);
+      return;
+    }
+    const msg = `Hi ${emp.name.split(" ")[0]}, this is a quick reminder about your ${emp.shift.toLowerCase()} shift today at RestroHub. Please confirm.`;
+    if (kind === "call") {
+      openUrl(`tel:${phone}`, "Phone dialer not available.");
+    } else if (kind === "whatsapp") {
+      const waNum = phone.startsWith("+") ? phone.slice(1) : phone;
+      openUrl(
+        `whatsapp://send?phone=${encodeURIComponent(waNum)}&text=${encodeURIComponent(msg)}`,
+        "WhatsApp not installed. Install WhatsApp and try again.",
+      );
+    } else if (kind === "sms") {
+      openUrl(`sms:${phone}?body=${encodeURIComponent(msg)}`, "SMS not available on this device.");
+    } else if (kind === "mail") {
+      openUrl(
+        `mailto:?subject=${encodeURIComponent("Shift reminder")}&body=${encodeURIComponent(msg)}`,
+        "Email client not available.",
+      );
     }
   };
 
@@ -116,23 +149,48 @@ export default function Employees() {
           const initials = e.name.split(" ").slice(0, 2).map((p: string) => p[0]).join("").toUpperCase();
           return (
             <View key={e.employee_id} style={styles.empCard} testID={`employee-row-${e.employee_id}`}>
-              <View style={styles.avatarRing}>
-                <Text style={styles.avatarText}>{initials}</Text>
+              <View style={styles.empTop}>
+                <View style={styles.avatarRing}>
+                  <Text style={styles.avatarText}>{initials}</Text>
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.empName}>{e.name}</Text>
+                  <Text style={styles.empRole}>{e.role} · {e.shift} shift</Text>
+                  <Text style={styles.empPay}>{inr(e.monthly_salary)} / month{e.phone ? ` · ${e.phone}` : ""}</Text>
+                </View>
+                <TouchableOpacity
+                  testID={`attendance-toggle-${e.employee_id}`}
+                  onPress={() => cycleStatus(e)}
+                  style={[styles.statusChip, { backgroundColor: meta.bg, borderColor: meta.color }]}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.statusDot, { backgroundColor: meta.color }]} />
+                  <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
+                </TouchableOpacity>
               </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.empName}>{e.name}</Text>
-                <Text style={styles.empRole}>{e.role} · {e.shift} shift</Text>
-                <Text style={styles.empPay}>{inr(e.monthly_salary)} / month</Text>
+
+              <View style={styles.contactRow}>
+                <ContactBtn
+                  testID={`call-${e.employee_id}`}
+                  icon="call" color="#10B981" label="Call"
+                  onPress={() => contactAction(e, "call")}
+                />
+                <ContactBtn
+                  testID={`whatsapp-${e.employee_id}`}
+                  icon="logo-whatsapp" color="#25D366" label="WhatsApp"
+                  onPress={() => contactAction(e, "whatsapp")}
+                />
+                <ContactBtn
+                  testID={`sms-${e.employee_id}`}
+                  icon="chatbubble-ellipses" color="#3B82F6" label="SMS"
+                  onPress={() => contactAction(e, "sms")}
+                />
+                <ContactBtn
+                  testID={`mail-${e.employee_id}`}
+                  icon="mail" color="#F97316" label="Email"
+                  onPress={() => contactAction(e, "mail")}
+                />
               </View>
-              <TouchableOpacity
-                testID={`attendance-toggle-${e.employee_id}`}
-                onPress={() => cycleStatus(e)}
-                style={[styles.statusChip, { backgroundColor: meta.bg, borderColor: meta.color }]}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.statusDot, { backgroundColor: meta.color }]} />
-                <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
-              </TouchableOpacity>
             </View>
           );
         })}
@@ -144,8 +202,7 @@ export default function Employees() {
         <Ionicons name="person-add" size={22} color="#fff" />
       </TouchableOpacity>
 
-      <Modal visible={modal} animationType="slide" transparent onRequestClose={() => setModal(false)}>
-        <View style={styles.modalBg}>
+      <Modal visible={modal} animationType="slide" transparent onRequestClose={() => setModal(false)}>        <View style={styles.modalBg}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Add Employee</Text>
             <TextInput testID="emp-form-name" placeholder="Full name" placeholderTextColor={theme.colors.text.tertiary}
@@ -185,6 +242,22 @@ export default function Employees() {
   );
 }
 
+function ContactBtn({
+  testID, icon, color, label, onPress,
+}: { testID: string; icon: any; color: string; label: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      testID={testID}
+      onPress={onPress}
+      activeOpacity={0.8}
+      style={[styles.contactBtn, { borderColor: color + "44", backgroundColor: color + "14" }]}
+    >
+      <Ionicons name={icon} size={14} color={color} />
+      <Text style={[styles.contactBtnText, { color }]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.colors.background },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
@@ -204,10 +277,20 @@ const styles = StyleSheet.create({
   trackWrap: { height: 6, backgroundColor: theme.colors.surfaceHighlight, borderRadius: 3, marginTop: 14, overflow: "hidden" },
   trackFill: { height: "100%", backgroundColor: theme.colors.semantic.success },
   empCard: {
-    flexDirection: "row", alignItems: "center", padding: 14, marginBottom: 10,
+    padding: 14, marginBottom: 10,
     backgroundColor: theme.colors.surface, borderRadius: 12,
     borderWidth: 1, borderColor: theme.colors.border,
   },
+  empTop: { flexDirection: "row", alignItems: "center" },
+  contactRow: {
+    flexDirection: "row", gap: 6, marginTop: 12, paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.colors.border,
+  },
+  contactBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 9, borderRadius: 8, borderWidth: 1,
+  },
+  contactBtnText: { fontSize: 11, fontWeight: "700" },
   avatarRing: {
     width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.brand.primaryMuted,
     alignItems: "center", justifyContent: "center",
