@@ -860,49 +860,21 @@ async def ai_insights(request: Request, branch_id: Optional[str] = None,
         "expense_categories": expenses["categories"],
     }
 
-    system = (
-        "You are a senior restaurant business analyst. Given aggregated sales, menu, and expense data, "
-        "produce 4 SHORT insight cards. Return strictly valid JSON: "
-        "{\"insights\": [{\"type\": one of [prediction, recommendation, alert, opportunity], "
-        "\"title\": string, \"message\": string, \"impact\": string}]} "
-        "Keep each message under 220 characters, actionable, specific, using numbers when available. No markdown."
-    )
-
-    #try:
-        #chat = LlmChat(
-            #api_key=EMERGENT_LLM_KEY,
-            #session_id=f"insights_{user.user_id}_{uuid.uuid4().hex[:6]}",
-            #system_message=system,
-        #).with_model("anthropic", "claude-sonnet-4-5-20250929")
-
-        #msg = UserMessage(text=f"Data:\n{payload}\n\nReturn only JSON.")
-        #raw = await chat.send_message(msg)
-
-        #import json as _json
-        #text = raw if isinstance(raw, str) else str(raw)
-        # Extract JSON
-        #start = text.find("{")
-        #end = text.rfind("}")
-        #if start != -1 and end != -1:
-            #text = text[start:end + 1]
-        #parsed = _json.loads(text)
-        #insights = parsed.get("insights", [])[:4]
-    #except Exception as e:
-        #logger.warning(f"LLM insight fallback: {e}")
-        insights = [
-            {"type": "prediction", "title": "Sales Forecast",
-             "message": f"Based on 7-day trend, expect ~₹{int(sum(p['total'] for p in summary['sales_7d']) / 7):,} avg daily revenue next week.",
-             "impact": "medium"},
-            {"type": "recommendation", "title": "Promote Top Item",
-             "message": f"{top5[0]['name'] if top5 else 'Your best seller'} drives highest revenue — feature it in combos to lift AOV.",
-             "impact": "high"},
-            {"type": "alert", "title": "Low Stock Items",
-             "message": f"{summary['kpis']['low_stock_count']} inventory items below threshold. Reorder before weekend.",
-             "impact": "high"},
-            {"type": "opportunity", "title": "Expense Review",
-             "message": f"Top expense: {expenses['categories'][0]['category'] if expenses['categories'] else 'N/A'}. Negotiate vendor contracts to save 8-12%.",
-             "impact": "medium"},
-        ]
+    # LLM disabled — always return deterministic fallback insights
+    insights = [
+        {"type": "prediction", "title": "Sales Forecast",
+         "message": f"Based on 7-day trend, expect ~₹{int(sum(p['total'] for p in summary['sales_7d']) / 7):,} avg daily revenue next week.",
+         "impact": "medium"},
+        {"type": "recommendation", "title": "Promote Top Item",
+         "message": f"{top5[0]['name'] if top5 else 'Your best seller'} drives highest revenue — feature it in combos to lift AOV.",
+         "impact": "high"},
+        {"type": "alert", "title": "Low Stock Items",
+         "message": f"{summary['kpis']['low_stock_count']} inventory items below threshold. Reorder before weekend.",
+         "impact": "high"},
+        {"type": "opportunity", "title": "Expense Review",
+         "message": f"Top expense: {expenses['categories'][0]['category'] if expenses['categories'] else 'N/A'}. Negotiate vendor contracts to save 8-12%.",
+         "impact": "medium"},
+    ]
 
     return {"insights": insights, "generated_at": datetime.now(timezone.utc).isoformat()}
 
@@ -1014,27 +986,11 @@ async def ai_ask(req: AiAskRequest, request: Request,
                  authorization: Optional[str] = Header(default=None)):
     user = await get_current_user(request, session_token, authorization)
     ctx = req.context if req.context in CONTEXT_PROMPTS else "dashboard"
-    data = await _context_payload(user.user_id, ctx, req.branch_id, request, session_token, authorization)
-
-    system = (
-        f"{CONTEXT_PROMPTS[ctx]} Only use the data provided. "
-        "Use Indian rupee ₹ formatting. Return plain text (no markdown)."
-    )
-    #try:
-        #chat = LlmChat(
-            #api_key=EMERGENT_LLM_KEY,
-            #session_id=f"ask_{user.user_id}_{uuid.uuid4().hex[:6]}",
-            #system_message=system,
-        #).with_model("anthropic", "claude-sonnet-4-5-20250929")
-        #msg = UserMessage(text=f"Context ({ctx}) data:\n{data}\n\nUser question: {req.question}")
-        #raw = await chat.send_message(msg)
-        return {"message": "Feature coming soon"}
-        answer = raw if isinstance(raw, str) else str(raw)
-    except Exception as e:
-        logger.warning(f"AI ask failed: {e}")
-        answer = "Sorry, I could not reach the AI service right now. Please try again."
-
-    return {"answer": answer.strip(), "context": ctx}
+    # AI disabled — return a friendly placeholder
+    return {
+        "answer": "AI assistant is temporarily disabled. Reconnect an LLM provider in server.py to re-enable answers.",
+        "context": ctx,
+    }
 
 
 # =================== CSV IMPORT ===================
@@ -1224,100 +1180,24 @@ def _parse_pdf_bytes(data: bytes) -> tuple[List[str], List[Dict[str, Any]]]:
 
 
 async def _parse_image_bytes(data: bytes, mime: str, filename: str) -> tuple[List[str], List[Dict[str, Any]]]:
-    """Use GPT-4o vision to OCR bill/invoice images and extract tabular data."""
-    import json as _json
-    #try:
-        #from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
-        #image_b64 = _b64.b64encode(data).decode()
-        #chat = LlmChat(
-            #api_key=EMERGENT_LLM_KEY,
-            #session_id=f"ocr_{uuid.uuid4().hex[:8]}",
-            #system_message=(
-                #"You are an OCR & data-extraction expert for restaurant documents "
-                #"(bills, invoices, daily sales reports, attendance sheets). "
-                #"Extract ANY tabular data you see and return STRICT JSON of the form: "
-                #"{\"headers\": [\"col1\", ...], \"rows\": [{\"col1\": \"value\", ...}, ...]}. "
-                #"Use clear column names in lowercase_snake_case like date, amount, item_name, qty, total. "
-                #"If you see a single-row bill (not a table), still output one row with fields."
-            #),
-        #).with_model("openai", "gpt-4o")
-        #msg = UserMessage(
-            #text="Extract all tabular data from this document image.",
-            #file_contents=[ImageContent(image_base64=image_b64)],
-        #)
-        #raw = await chat.send_message(msg)
-        return {"message": "Feature coming soon"}
-return {
-    "headers": [],
-    "rows": [],
-    "message": "OCR feature temporarily disabled"
-}
-        text = raw if isinstance(raw, str) else str(raw)
-        s, e = text.find("{"), text.rfind("}")
-        if s == -1 or e == -1:
-            return ["raw_text"], [{"raw_text": text[:500]}]
-        parsed = _json.loads(text[s:e + 1])
-        headers = parsed.get("headers", []) or []
-        rows = parsed.get("rows", []) or []
-        # Normalize
-        body = []
-        for r in rows:
-            body.append({h: str(r.get(h, "")) for h in headers})
-        return headers, body
-    except Exception as ex:
-        logger.warning(f"OCR failed: {ex}")
-        return ["raw_text"], [{"raw_text": f"OCR error: {ex}"}]
+    """OCR temporarily disabled — returns a placeholder row so the UI can show 'feature unavailable'."""
+    logger.info(f"OCR called for {filename} ({len(data)} bytes, {mime}) — disabled, returning placeholder.")
+    return ["note"], [{"note": "OCR feature temporarily disabled. Re-enable emergentintegrations to use image parsing."}]
 
 
 async def _ai_map_columns(headers: List[str], sample_rows: List[Dict[str, Any]], category: str) -> Dict[str, str]:
-    """Ask Claude to map source columns to target schema fields."""
-    import json as _json
+    """Heuristic column mapping (LLM disabled). Matches target fields to source columns by substring."""
     schema = TARGET_SCHEMAS.get(category)
     if not schema:
         return {}
-    #try:
-        #chat = LlmChat(
-            #api_key=EMERGENT_LLM_KEY,
-            #session_id=f"map_{uuid.uuid4().hex[:8]}",
-            #system_message=(
-                #"You map source spreadsheet/CSV columns to target database fields. "
-                #"Return strict JSON: {\"mapping\": {\"target_field\": \"source_column_or_empty_string\"}}. "
-                #"Use empty string when no suitable source column exists. Do not invent columns."
-            #),
-        #).with_model("anthropic", "claude-sonnet-4-5-20250929")
-        #prompt = {
-            #"target_fields": schema["fields"],
-            #"required_fields": schema["required"],
-            #"source_headers": headers,
-            #"sample_rows": sample_rows[:3],
-            #"category": category,
-        #}
-        #raw = await chat.send_message(UserMessage(text=f"Map columns. Input: {prompt}. Return JSON only."))
-        return {"message": "Feature coming soon"}
-        return {
-    "headers": [],
-    "rows": [],
-    "message": "OCR feature temporarily disabled"
-}
-        text = raw if isinstance(raw, str) else str(raw)
-        s, e = text.find("{"), text.rfind("}")
-        if s == -1:
-            return {}
-        parsed = _json.loads(text[s:e + 1])
-        mapping = parsed.get("mapping", {})
-        # Keep only target fields that exist in schema
-        return {k: v for k, v in mapping.items() if k in schema["fields"] and isinstance(v, str)}
-    except Exception as ex:
-        logger.warning(f"AI mapping failed, falling back to heuristic: {ex}")
-        # Simple fallback: match by lowercase substring
-        mapping = {}
-        lower_headers = {h.lower().replace(" ", "_"): h for h in headers}
-        for f in schema["fields"]:
-            for key, orig in lower_headers.items():
-                if f == key or f in key or key in f:
-                    mapping[f] = orig
-                    break
-        return mapping
+    mapping: Dict[str, str] = {}
+    lower_headers = {h.lower().replace(" ", "_"): h for h in headers}
+    for f in schema["fields"]:
+        for key, orig in lower_headers.items():
+            if f == key or f in key or key in f:
+                mapping[f] = orig
+                break
+    return mapping
 
 
 @api_router.post("/integrations/parse")
