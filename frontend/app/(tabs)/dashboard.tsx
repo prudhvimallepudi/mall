@@ -78,9 +78,6 @@ export default function Dashboard() {
             <Text testID="dashboard-user-name" style={styles.name}>{user?.name?.split(" ")[0] || "Owner"}</Text>
             {user?.business_name ? <Text style={styles.business}>{user.business_name}</Text> : null}
           </View>
-          <TouchableOpacity testID="profile-button" onPress={() => router.push("/(tabs)/profile")} style={styles.avatarBtn} activeOpacity={0.8}>
-            <Avatar avatarId={user?.avatar_id} name={user?.name} size={40} />
-          </TouchableOpacity>
         </View>
 
         <View style={{ marginBottom: 20 }}>

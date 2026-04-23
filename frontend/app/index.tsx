@@ -110,29 +110,10 @@ export default function Login() {
           </View>
 
           <View style={styles.formBlock}>
-            {IS_WEB && (
-              <>
-                <TouchableOpacity
-                  testID="login-google-button"
-                  style={styles.googleBtn}
-                  onPress={handleGoogle}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.googleDot} />
-                  <Text style={styles.googleText}>Continue with Google</Text>
-                </TouchableOpacity>
-
-                <View style={styles.dividerRow}>
-                  <View style={styles.divider} />
-                  <Text style={styles.dividerText}>or use demo access</Text>
-                  <View style={styles.divider} />
-                </View>
-              </>
-            )}
-
+            <Text style={styles.formLabel}>Sign in with your Gmail</Text>
             <TextInput
               testID="login-email-input"
-              placeholder="you@restaurant.com"
+              placeholder="you@gmail.com"
               placeholderTextColor={theme.colors.text.tertiary}
               value={email}
               onChangeText={setEmail}
@@ -181,6 +162,14 @@ const styles = StyleSheet.create({
   title: { color: theme.colors.text.primary, fontSize: 34, fontWeight: "800", lineHeight: 40, letterSpacing: -1 },
   subtitle: { color: theme.colors.text.secondary, fontSize: 15, marginTop: 14, lineHeight: 22, maxWidth: 340 },
   formBlock: { marginBottom: 20 },
+  formLabel: {
+    color: theme.colors.text.secondary,
+    fontSize: 12,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    fontWeight: "700",
+    marginBottom: 10,
+  },
   googleBtn: {
     backgroundColor: "#FFFFFF",
     paddingVertical: 14,
