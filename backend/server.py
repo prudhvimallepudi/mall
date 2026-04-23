@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+#from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -868,15 +868,16 @@ async def ai_insights(request: Request, branch_id: Optional[str] = None,
         "Keep each message under 220 characters, actionable, specific, using numbers when available. No markdown."
     )
 
-    try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"insights_{user.user_id}_{uuid.uuid4().hex[:6]}",
-            system_message=system,
-        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    #try:
+        #chat = LlmChat(
+            #api_key=EMERGENT_LLM_KEY,
+            #session_id=f"insights_{user.user_id}_{uuid.uuid4().hex[:6]}",
+            #system_message=system,
+        #).with_model("anthropic", "claude-sonnet-4-5-20250929")
 
-        msg = UserMessage(text=f"Data:\n{payload}\n\nReturn only JSON.")
-        raw = await chat.send_message(msg)
+        #msg = UserMessage(text=f"Data:\n{payload}\n\nReturn only JSON.")
+        #raw = await chat.send_message(msg)
+return {"message": "Feature coming soon"}
 
         import json as _json
         text = raw if isinstance(raw, str) else str(raw)
@@ -1020,14 +1021,15 @@ async def ai_ask(req: AiAskRequest, request: Request,
         f"{CONTEXT_PROMPTS[ctx]} Only use the data provided. "
         "Use Indian rupee ₹ formatting. Return plain text (no markdown)."
     )
-    try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"ask_{user.user_id}_{uuid.uuid4().hex[:6]}",
-            system_message=system,
-        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-        msg = UserMessage(text=f"Context ({ctx}) data:\n{data}\n\nUser question: {req.question}")
-        raw = await chat.send_message(msg)
+    #try:
+        #chat = LlmChat(
+            #api_key=EMERGENT_LLM_KEY,
+            #session_id=f"ask_{user.user_id}_{uuid.uuid4().hex[:6]}",
+            #system_message=system,
+        #).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        #msg = UserMessage(text=f"Context ({ctx}) data:\n{data}\n\nUser question: {req.question}")
+        #raw = await chat.send_message(msg)
+return {"message": "Feature coming soon"}
         answer = raw if isinstance(raw, str) else str(raw)
     except Exception as e:
         logger.warning(f"AI ask failed: {e}")
@@ -1225,26 +1227,31 @@ def _parse_pdf_bytes(data: bytes) -> tuple[List[str], List[Dict[str, Any]]]:
 async def _parse_image_bytes(data: bytes, mime: str, filename: str) -> tuple[List[str], List[Dict[str, Any]]]:
     """Use GPT-4o vision to OCR bill/invoice images and extract tabular data."""
     import json as _json
-    try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
-        image_b64 = _b64.b64encode(data).decode()
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"ocr_{uuid.uuid4().hex[:8]}",
-            system_message=(
-                "You are an OCR & data-extraction expert for restaurant documents "
-                "(bills, invoices, daily sales reports, attendance sheets). "
-                "Extract ANY tabular data you see and return STRICT JSON of the form: "
-                "{\"headers\": [\"col1\", ...], \"rows\": [{\"col1\": \"value\", ...}, ...]}. "
-                "Use clear column names in lowercase_snake_case like date, amount, item_name, qty, total. "
-                "If you see a single-row bill (not a table), still output one row with fields."
-            ),
-        ).with_model("openai", "gpt-4o")
-        msg = UserMessage(
-            text="Extract all tabular data from this document image.",
-            file_contents=[ImageContent(image_base64=image_b64)],
-        )
-        raw = await chat.send_message(msg)
+    #try:
+        #from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+        #image_b64 = _b64.b64encode(data).decode()
+        #chat = LlmChat(
+            #api_key=EMERGENT_LLM_KEY,
+            #session_id=f"ocr_{uuid.uuid4().hex[:8]}",
+            #system_message=(
+                #"You are an OCR & data-extraction expert for restaurant documents "
+                #"(bills, invoices, daily sales reports, attendance sheets). "
+                #"Extract ANY tabular data you see and return STRICT JSON of the form: "
+                #"{\"headers\": [\"col1\", ...], \"rows\": [{\"col1\": \"value\", ...}, ...]}. "
+                #"Use clear column names in lowercase_snake_case like date, amount, item_name, qty, total. "
+                #"If you see a single-row bill (not a table), still output one row with fields."
+            #),
+        #).with_model("openai", "gpt-4o")
+        #msg = UserMessage(
+            #text="Extract all tabular data from this document image.",
+            #file_contents=[ImageContent(image_base64=image_b64)],
+        #)
+        #raw = await chat.send_message(msg)
+return {
+    "headers": [],
+    "rows": [],
+    "message": "OCR feature temporarily disabled"
+}
         text = raw if isinstance(raw, str) else str(raw)
         s, e = text.find("{"), text.rfind("}")
         if s == -1 or e == -1:
@@ -1268,24 +1275,29 @@ async def _ai_map_columns(headers: List[str], sample_rows: List[Dict[str, Any]],
     schema = TARGET_SCHEMAS.get(category)
     if not schema:
         return {}
-    try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"map_{uuid.uuid4().hex[:8]}",
-            system_message=(
-                "You map source spreadsheet/CSV columns to target database fields. "
-                "Return strict JSON: {\"mapping\": {\"target_field\": \"source_column_or_empty_string\"}}. "
-                "Use empty string when no suitable source column exists. Do not invent columns."
-            ),
-        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-        prompt = {
-            "target_fields": schema["fields"],
-            "required_fields": schema["required"],
-            "source_headers": headers,
-            "sample_rows": sample_rows[:3],
-            "category": category,
-        }
-        raw = await chat.send_message(UserMessage(text=f"Map columns. Input: {prompt}. Return JSON only."))
+    #try:
+        #chat = LlmChat(
+            #api_key=EMERGENT_LLM_KEY,
+            #session_id=f"map_{uuid.uuid4().hex[:8]}",
+            #system_message=(
+                #"You map source spreadsheet/CSV columns to target database fields. "
+                #"Return strict JSON: {\"mapping\": {\"target_field\": \"source_column_or_empty_string\"}}. "
+                #"Use empty string when no suitable source column exists. Do not invent columns."
+            #),
+        #).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        #prompt = {
+            #"target_fields": schema["fields"],
+            #"required_fields": schema["required"],
+            #"source_headers": headers,
+            #"sample_rows": sample_rows[:3],
+            #"category": category,
+        #}
+        #raw = await chat.send_message(UserMessage(text=f"Map columns. Input: {prompt}. Return JSON only."))
+        return {
+    "headers": [],
+    "rows": [],
+    "message": "OCR feature temporarily disabled"
+}
         text = raw if isinstance(raw, str) else str(raw)
         s, e = text.find("{"), text.rfind("}")
         if s == -1:
