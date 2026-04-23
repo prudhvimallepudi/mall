@@ -878,17 +878,17 @@ async def ai_insights(request: Request, branch_id: Optional[str] = None,
         #msg = UserMessage(text=f"Data:\n{payload}\n\nReturn only JSON.")
         #raw = await chat.send_message(msg)
 
-        import json as _json
-        text = raw if isinstance(raw, str) else str(raw)
+        #import json as _json
+        #text = raw if isinstance(raw, str) else str(raw)
         # Extract JSON
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1:
-            text = text[start:end + 1]
-        parsed = _json.loads(text)
-        insights = parsed.get("insights", [])[:4]
-    except Exception as e:
-        logger.warning(f"LLM insight fallback: {e}")
+        #start = text.find("{")
+        #end = text.rfind("}")
+        #if start != -1 and end != -1:
+            #text = text[start:end + 1]
+        #parsed = _json.loads(text)
+        #insights = parsed.get("insights", [])[:4]
+    #except Exception as e:
+        #logger.warning(f"LLM insight fallback: {e}")
         insights = [
             {"type": "prediction", "title": "Sales Forecast",
              "message": f"Based on 7-day trend, expect ~₹{int(sum(p['total'] for p in summary['sales_7d']) / 7):,} avg daily revenue next week.",
