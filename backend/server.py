@@ -877,7 +877,7 @@ async def ai_insights(request: Request, branch_id: Optional[str] = None,
 
         #msg = UserMessage(text=f"Data:\n{payload}\n\nReturn only JSON.")
         #raw = await chat.send_message(msg)
-return {"message": "Feature coming soon"}
+        return {"message": "Feature coming soon"}
 
         import json as _json
         text = raw if isinstance(raw, str) else str(raw)
@@ -1029,7 +1029,7 @@ async def ai_ask(req: AiAskRequest, request: Request,
         #).with_model("anthropic", "claude-sonnet-4-5-20250929")
         #msg = UserMessage(text=f"Context ({ctx}) data:\n{data}\n\nUser question: {req.question}")
         #raw = await chat.send_message(msg)
-return {"message": "Feature coming soon"}
+        return {"message": "Feature coming soon"}
         answer = raw if isinstance(raw, str) else str(raw)
     except Exception as e:
         logger.warning(f"AI ask failed: {e}")
@@ -1247,6 +1247,7 @@ async def _parse_image_bytes(data: bytes, mime: str, filename: str) -> tuple[Lis
             #file_contents=[ImageContent(image_base64=image_b64)],
         #)
         #raw = await chat.send_message(msg)
+        return {"message": "Feature coming soon"}
 return {
     "headers": [],
     "rows": [],
@@ -1293,6 +1294,7 @@ async def _ai_map_columns(headers: List[str], sample_rows: List[Dict[str, Any]],
             #"category": category,
         #}
         #raw = await chat.send_message(UserMessage(text=f"Map columns. Input: {prompt}. Return JSON only."))
+        return {"message": "Feature coming soon"}
         return {
     "headers": [],
     "rows": [],
