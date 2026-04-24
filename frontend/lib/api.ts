@@ -1,7 +1,7 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
+const BASE = "https://mall-nroh.onrender.com";
 
 export const api = axios.create({
   baseURL: `${BASE}/api`,
